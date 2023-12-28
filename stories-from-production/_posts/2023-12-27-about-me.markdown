@@ -1,0 +1,12 @@
+---
+layout: post
+title:  "About Me"
+date:   2023-12-27 18:51:40 +0000
+categories: author
+---
+
+## About Me
+
+I've worked in software development since 2016. My work is primarily done in .NET with C#.
+
+I enjoy working with Microsoft SQL Server and making applications and queries perform better.
