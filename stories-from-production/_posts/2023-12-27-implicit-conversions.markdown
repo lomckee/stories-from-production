@@ -7,7 +7,7 @@ categories: sql server
 
 ## Implicit Conversions in Microsoft SQL Server
 
-A very common issue is an implicit conversion. They occur when SQL Server is told to compare two values of differing data types.
+A very common issue is an implicit conversion. They occur when SQL Server is told to compare two values of differing datatypes.
 They often cause SQL Server to perform an index scan instead of an index seek. This can cause unintentional performance impact.
 
 This post will review several implicit conversion scenarios and how to fix them.
@@ -59,10 +59,10 @@ ON dbo.Lefty ( ExternalId );
 
 ### Problem
 
-In this situation the value that is being filtered by is a type mismatch to the data type in the table.
+In this situation the value that is being filtered by is a type mismatch to the datatype in the table.
 In the code snippet below, a lookup is performed for the ExternalId value `156` as an integer. Examining the plan generated, a warning is produced about an implicit conversion and an index scan is performed on IX_Righty_ExternalId.
 
-If `SET STATISTICS IO ON;` is also set it's observable that a large number of logical reads is performed, in this case just over 18,000.
+If `SET STATISTICS IO ON;` is also set, it's observable that a large number of logical reads is performed, in this case just over 18,000.
 
 {% highlight sql %}
 SET STATISTICS IO ON;
@@ -70,7 +70,7 @@ SET STATISTICS IO ON;
 SELECT Id, ExternalId, ExternalIdNumber
 FROM Righty r
 WHERE r.ExternalId = 156
-{% endhighlight% }
+{% endhighlight %}
 
 `Table 'Righty'. Scan count 11, logical reads 18002`
 
@@ -78,7 +78,7 @@ WHERE r.ExternalId = 156
 
 ### Solution
 
-Simply replace the integer in the where clause with a data type that matches the value in the table, in this case a varchar(100).
+Simply replace the integer in the where clause with a datatype that matches the value in the table, in this case a varchar(100).
 
 {% highlight sql %}
 SELECT Id, ExternalId, ExternalIdNumber
@@ -88,9 +88,79 @@ WHERE r.ExternalId = '156'
 
 `Table 'Righty'. Scan count 1, logical reads 6`
 
-![Where Clause implicit conversion](../assets/2023-12-27-implicit-conversions/02-where-clause-solution.png)
+![Where Clause implicit conversion](/assets/2023-12-27-implicit-conversions/02-where-clause-solution.png)
 
 ## Implicit Conversion Caused by Joining on Two Different Datatypes
+
+### Problem
+
+Table A has a field that is a foreign key of Table B; however, the datatypes of these fields differ. A join is performed on them as part of a query. Note that having an actual foreign key in place would prevent this scenario, but as is often the case in the real world, explicit foreign key constraints are often neglected.
+
+For this problem we will change the table structure a little bit to better represent what I've seen in the real world.
+
+{% highlight sql %}
+CREATE TABLE ExternalSourceData
+(
+	Id VARCHAR(100) NOT NULL,
+	CONSTRAINT PK_ExternalSourceData PRIMARY KEY (Id)
+)
+
+CREATE TABLE InternalData
+(
+	Id INT IDENTITY(1,1),
+	ExternalId VARCHAR(100) NOT NULL,
+	ExternalIdNumber INT NOT NULL,
+	CONSTRAINT PK_InternalData PRIMARY KEY (Id),
+	CONSTRAINT FK_InternalData_ExternalSourceData FOREIGN KEY (ExternalId) REFERENCES dbo.ExternalSourceData (Id)
+)
+
+/* Add data */
+INSERT INTO ExternalSourceData (Id)
+SELECT CAST(ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS VARCHAR(10))
+FROM master.dbo.spt_values spt1
+CROSS APPLY master.dbo.spt_values spt2;
+
+INSERT INTO InternalData (ExternalId, ExternalIdNumber)
+SELECT Id, CAST(Id AS VARCHAR(10)) AS ExternalIdNumber
+FROM dbo.ExternalSourceData;
+
+/* Add indexes */
+CREATE NONCLUSTERED INDEX IX_InternalData_ExternalId
+ON dbo.InternalData ( ExternalId );
+
+CREATE NONCLUSTERED INDEX IX_InternalData_ExternalIdNumber
+ON dbo.InternalData ( ExternalIdNumber );
+
+/* Test queries */
+SELECT TOP 1000 id.Id, id.ExternalId, id.ExternalIdNumber
+FROM dbo.ExternalSourceData esd
+JOIN dbo.InternalData id
+ON esd.Id = id.ExternalId
+
+SELECT TOP 1000 id.Id, id.ExternalId, id.ExternalIdNumber
+FROM dbo.ExternalSourceData esd
+JOIN dbo.InternalData id
+ON esd.Id = id.ExternalIdNumber
+
+{% endhighlight %}
+
+With an index on `ExternalId` and `ExternalIdNumber` typically we would expect an index seek on `IX_InternalData_ExternalId` and `IX_InternalData_ExternalIdNumber` when joining onto those columns; due to the datatype mismatch between `ExternalSourceData.Id` and `InternalData.ExternalIdNumber` an implicit conversion occurs and a scan is performed instead of a seek.
+
+![Join Implicit Conversion](/assets/2023-12-27-implicit-conversions/03-join-mismatch.png)
+
+With `SET STATISTICS IO ON;` set we can see a large number of scans are performed and over 6000 logical reads occur with this data set.
+
+`Table 'InternalData'. Scan count 1000, logical reads 6288,`
+
+`Table 'ExternalSourceData'. Scan count 1, logical reads 33`
+
+Joining onto `InternalData.ExternalId`, which has the same datatype as `ExternalSourceData.Id`, there is a large difference in the amount of work done
+
+`Table 'InternalData'. Scan count 1, logical reads 2`
+
+![Join Same Type](/assets/2023-12-27-implicit-conversions/04-join-same-type.png)
+
+
 
 Check out the [Jekyll docs][jekyll-docs] for more info on how to get the most out of Jekyll. File all bugs/feature requests at [Jekyll’s GitHub repo][jekyll-gh]. If you have questions, you can ask them on [Jekyll Talk][jekyll-talk].
 
