@@ -98,6 +98,8 @@ Table A has a field that is a foreign key of Table B; however, the datatypes of 
 
 For this problem we will change the table structure a little bit to better represent what I've seen in the real world.
 
+You may note that the following tables are missing explicit foreign key constraints. This is intentional for this demo as in the real world I have encountered numerous times foreign keys without the constraint explicitly declared. We will see how this also impacts performance. Additionally, you can't have a foreign key between two fields with mismatched data types.
+
 {% highlight sql %}
 CREATE TABLE ExternalSourceData
 (
@@ -110,8 +112,7 @@ CREATE TABLE InternalData
 	Id INT IDENTITY(1,1),
 	ExternalId VARCHAR(100) NOT NULL,
 	ExternalIdNumber INT NOT NULL,
-	CONSTRAINT PK_InternalData PRIMARY KEY (Id),
-	CONSTRAINT FK_InternalData_ExternalSourceData FOREIGN KEY (ExternalId) REFERENCES dbo.ExternalSourceData (Id)
+	CONSTRAINT PK_InternalData PRIMARY KEY (Id)
 )
 
 /* Add data */
@@ -154,16 +155,44 @@ With `SET STATISTICS IO ON;` set we can see a large number of scans are performe
 
 `Table 'ExternalSourceData'. Scan count 1, logical reads 33`
 
-Joining onto `InternalData.ExternalId`, which has the same datatype as `ExternalSourceData.Id`, there is a large difference in the amount of work done
+Joining onto `InternalData.ExternalId`, which has the same datatype as `ExternalSourceData.Id`, there is a difference in the amount of work done
 
-`Table 'InternalData'. Scan count 1, logical reads 2`
+`Table 'InternalData'. Scan count 1, logical reads 3096`
+
+`Table 'ExternalSourceData'. Scan count 1, logical reads 33`
 
 ![Join Same Type](/assets/2023-12-27-implicit-conversions/04-join-same-type.png)
 
+### Solution
 
+In the real world, you wouldn't have two columns of differing data types representing the same value, that's just silly.
+The solution would generally be to update the datatype to the most appropriate one for the situation. If all the values are integers for example, both columns should be integers; however, if it's variable data then varchar would be more appropriate.
 
-Check out the [Jekyll docs][jekyll-docs] for more info on how to get the most out of Jekyll. File all bugs/feature requests at [Jekyll’s GitHub repo][jekyll-gh]. If you have questions, you can ask them on [Jekyll Talk][jekyll-talk].
+{% highlight sql %}
+ALTER TABLE dbo.InternalData
+ALTER COLUMN ExternalIdNumber VARCHAR(100) NOT NULL
+{% endhighlight %}
 
-[jekyll-docs]: https://jekyllrb.com/docs/home
-[jekyll-gh]:   https://github.com/jekyll/jekyll
-[jekyll-talk]: https://talk.jekyllrb.com/
+You may need to drop and recreate dependent objects.
+
+{% highlight sql %}
+DROP INDEX IF EXISTS IX_InternalData_ExternalIdNumber ON dbo.InternalData
+
+CREATE NONCLUSTERED INDEX IX_InternalData_ExternalIdNumber
+ON dbo.InternalData ( ExternalIdNumber );
+{% endhighlight %}
+
+Once this is done, we can also declare our foreign keys explicitly.
+
+{% highlight sql %}
+ALTER TABLE dbo.InternalData
+ADD CONSTRAINT FK_InternalData_ExternalSourceData_ExternalIdNumber
+FOREIGN KEY (ExternalIdNumber)
+REFERENCES dbo.ExternalSourceData(Id);
+{% endhighlight %}
+
+With the foreign key in place, re-executing our original query SQL Server no longer even needs to touch the `ExternalSourceData` table:
+
+`Table 'InternalData'. Scan count 1, logical reads 19`
+
+![Foreign Key Query](/assets/2023-12-27-implicit-conversions/05-foreign-key.png)
