@@ -42,14 +42,10 @@ jobs:
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v4
-      - name: Navigate to Jekyll directory
-        run: |
-              cd stories-from-production
-              ls
       - name: Build with Jekyll
         # Outputs to the './_site' directory by default
         run: |
-              ls
+              cd stories-from-production
               bundle exec jekyll build
         env:
           JEKYLL_ENV: production
