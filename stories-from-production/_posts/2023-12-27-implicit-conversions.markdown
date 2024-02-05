@@ -196,3 +196,170 @@ With the foreign key in place, re-executing our original query SQL Server no lon
 `Table 'InternalData'. Scan count 1, logical reads 19`
 
 ![Foreign Key Query](/assets/2023-12-27-implicit-conversions/05-foreign-key.png)
+
+## Implicit Conversion Caused by a Misconfiguration in Entity Framework
+
+I suggest using EF Core tooling to generate your model, or database depending which you created first, this will automatically take care of the type definitions for you.
+[Scaffolding](https://learn.microsoft.com/en-us/ef/core/managing-schemas/scaffolding/).
+
+I find that people do not often know about or use the `Scaffold-DbContext` command, and instead manually create their models and configuration. This can lead to issues with implicit conversions.
+
+
+### Data Generation
+
+First, let's create some tables:
+
+{% highlight sql %}
+IF OBJECT_ID (N'BadType', N'U') IS NULL
+BEGIN
+CREATE TABLE [BadType]
+(
+	Id INT IDENTITY(1,1),
+	SomeVarchar NVARCHAR(100)
+	CONSTRAINT [PK_BadType] PRIMARY KEY CLUSTERED
+	(
+	Id ASC
+	)
+)
+
+END
+GO
+
+IF OBJECT_ID (N'GoodType', N'U') IS NULL
+BEGIN
+CREATE TABLE [GoodType]
+(
+	Id INT IDENTITY(1,1),
+	SomeNVarchar NVARCHAR(100),
+	CONSTRAINT [PK_GoodType] PRIMARY KEY CLUSTERED
+	(
+	Id ASC
+	)
+)
+END
+GO
+{% endhighlight %}
+
+We use this method from Itik Ben-Gan to generate 1 million rows of data.
+
+{% highlight sql %}
+WITH
+L0   AS (SELECT c FROM (SELECT 1 UNION ALL SELECT 1) AS D(c)), -- 2^1
+L1   AS (SELECT 1 AS c FROM L0 AS A CROSS JOIN L0 AS B),       -- 2^2
+L2   AS (SELECT 1 AS c FROM L1 AS A CROSS JOIN L1 AS B),       -- 2^4
+L3   AS (SELECT 1 AS c FROM L2 AS A CROSS JOIN L2 AS B),       -- 2^8
+L4   AS (SELECT 1 AS c FROM L3 AS A CROSS JOIN L3 AS B),       -- 2^16
+L5   AS (SELECT 1 AS c FROM L4 AS A CROSS JOIN L4 AS B),       -- 2^32
+Nums AS (SELECT ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) AS k FROM L5)
+
+INSERT INTO dbo.BadType
+select N'b_' + cast (k as nvarchar) as a
+from nums
+where k <= 1000000
+
+WITH
+L0   AS (SELECT c FROM (SELECT 1 UNION ALL SELECT 1) AS D(c)), -- 2^1
+L1   AS (SELECT 1 AS c FROM L0 AS A CROSS JOIN L0 AS B),       -- 2^2
+L2   AS (SELECT 1 AS c FROM L1 AS A CROSS JOIN L1 AS B),       -- 2^4
+L3   AS (SELECT 1 AS c FROM L2 AS A CROSS JOIN L2 AS B),       -- 2^8
+L4   AS (SELECT 1 AS c FROM L3 AS A CROSS JOIN L3 AS B),       -- 2^16
+L5   AS (SELECT 1 AS c FROM L4 AS A CROSS JOIN L4 AS B),       -- 2^32
+Nums AS (SELECT ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) AS k FROM L5)
+
+INSERT INTO dbo.GoodType
+select N'b_' + cast (k as nvarchar) as a
+from nums
+where k <= 1000000
+
+{% endhighlight %}
+
+### .Net Project
+
+Now we have our data, let's set up our .Net Project.
+
+The code has been provided in the [repository for this blog post](https://github.com/lomckee/stories-from-production/tree/master/code-samples/2023-12-27-implicitconversions/EFImplicitConversion)
+
+We've created two models: `GoodType` and `BadType`. They are the same, however at the database level `BadType` has a `VARCHAR` column and `GoodType` has an `NVARCHAR` column.
+This is not to say that `VARCHAR` is a bad type, we simply have not told EntityFramework it is a `VARCHAR`. By default, EntityFramework will treat it as an `NVARCHAR`.
+
+Executing the code will output the following SQL:
+
+{% highlight sql %}
+Executed DbCommand (76ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT [b].[Id], [b].[SomeVarchar]
+FROM [BadType] AS [b]
+WHERE [b].[SomeVarchar] = N'Hello World'
+
+
+Executed DbCommand (39ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT [g].[Id], [g].[SomeNVarchar]
+FROM [GoodType] AS [g]
+WHERE [g].[SomeNVarchar] = N'Hello World'
+
+{% endhighlight %}
+
+Simply from this output we can see that the query on `BadType` took almost double the time it took for `GoodType`.
+
+We can see from the execution plan that the query on `BadType` is performing a scan, whereas the query on `GoodType` is performing a seek.
+
+![EF Implicit Conversion](/assets/2023-12-27-implicit-conversions/06-netcore-implicitconversion.png)
+
+
+### Solution
+
+In the entity configuration for `BadType`, we simply need to notify EntityFramework that the column is a `VARCHAR` and not an `NVARCHAR`.
+
+{% highlight csharp %}
+
+public class BadTypeConfiguration : IEntityTypeConfiguration<BadType>
+{
+	public void Configure(EntityTypeBuilder<BadType> builder)
+	{
+		builder.ToTable("BadType");
+
+		builder.Property(e => e.SomeVarchar)
+			.HasColumnType("varchar(100)");
+	}
+}
+{% endhighlight %}
+
+Once configured, rerun the project and get the new queries from the output:
+
+{% highlight sql %}
+Executing GetBadType
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+Executed DbCommand (15ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT [b].[Id], [b].[SomeVarchar]
+FROM [BadType] AS [b]
+WHERE [b].[SomeVarchar] = 'Hello World'
+Executing GetGoodType
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT [g].[Id], [g].[SomeNVarchar]
+FROM [GoodType] AS [g]
+WHERE [g].[SomeNVarchar] = N'Hello World'
+
+{% endhighlight %}
+
+![EF Implicit Conversion Fixed](/assets/2023-12-27-implicit-conversions/07-netcore-implicitconversion-fixed.png)
+
+## Finding Implicit conversions using an Extended Event Session
+
+To be proactive about finding implicit conversions, you can set up an extended event session to capture them.
+
+{% highlight sql %}
+CREATE EVENT SESSION [implicit_conversions] ON SERVER
+ADD EVENT sqlserver.plan_affecting_convert(
+ACTION(sqlserver.database_name,sqlserver.plan_handle,sqlserver.query_hash,sqlserver.sql_text))
+ADD TARGET package0.ring_buffer(SET max_events_limit=(0),max_memory=(153600))
+WITH (STARTUP_STATE=ON)
+GO
+
+
+ALTER EVENT SESSION [implicit_conversions] ON SERVER STATE = START;
+
+{% endhighlight %}
+
+![Extended Event Output](/assets/2023-12-27-implicit-conversions/08-extended-event.png)
+
+We can then utilize [XESmartTarget](https://github.com/spaghettidba/XESmartTarget/wiki) by SpaghettiDBA to output that data to a table or another medium for tracking and reporting.
