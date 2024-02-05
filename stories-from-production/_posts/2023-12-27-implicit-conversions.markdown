@@ -74,7 +74,7 @@ WHERE r.ExternalId = 156
 
 `Table 'Righty'. Scan count 11, logical reads 18002`
 
-![Where Clause implicit conversion](/assets/2023-12-27-implicit-conversions/01-where-clause.png)
+![Where Clause implicit conversion]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/01-where-clause.png)
 
 ### Solution
 
@@ -88,7 +88,7 @@ WHERE r.ExternalId = '156'
 
 `Table 'Righty'. Scan count 1, logical reads 6`
 
-![Where Clause implicit conversion](/assets/2023-12-27-implicit-conversions/02-where-clause-solution.png)
+![Where Clause implicit conversion]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/02-where-clause-solution.png)
 
 ## Implicit Conversion Caused by Joining on Two Different Datatypes
 
@@ -147,7 +147,7 @@ ON esd.Id = id.ExternalIdNumber
 
 With an index on `ExternalId` and `ExternalIdNumber` typically we would expect an index seek on `IX_InternalData_ExternalId` and `IX_InternalData_ExternalIdNumber` when joining onto those columns; due to the datatype mismatch between `ExternalSourceData.Id` and `InternalData.ExternalIdNumber` an implicit conversion occurs and a scan is performed instead of a seek.
 
-![Join Implicit Conversion](/assets/2023-12-27-implicit-conversions/03-join-mismatch.png)
+![Join Implicit Conversion]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/03-join-mismatch.png)
 
 With `SET STATISTICS IO ON;` set we can see a large number of scans are performed and over 6000 logical reads occur with this data set.
 
@@ -161,7 +161,7 @@ Joining onto `InternalData.ExternalId`, which has the same datatype as `External
 
 `Table 'ExternalSourceData'. Scan count 1, logical reads 33`
 
-![Join Same Type](/assets/2023-12-27-implicit-conversions/04-join-same-type.png)
+![Join Same Type]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/04-join-same-type.png)
 
 ### Solution
 
@@ -195,7 +195,7 @@ With the foreign key in place, re-executing our original query SQL Server no lon
 
 `Table 'InternalData'. Scan count 1, logical reads 19`
 
-![Foreign Key Query](/assets/2023-12-27-implicit-conversions/05-foreign-key.png)
+![Foreign Key Query]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/05-foreign-key.png)
 
 ## Implicit Conversion Caused by a Misconfiguration in Entity Framework
 
@@ -302,7 +302,7 @@ Simply from this output we can see that the query on `BadType` took almost doubl
 
 We can see from the execution plan that the query on `BadType` is performing a scan, whereas the query on `GoodType` is performing a seek.
 
-![EF Implicit Conversion](/assets/2023-12-27-implicit-conversions/06-netcore-implicitconversion.png)
+![EF Implicit Conversion]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/06-netcore-implicitconversion.png)
 
 
 ### Solution
@@ -341,7 +341,7 @@ WHERE [g].[SomeNVarchar] = N'Hello World'
 
 {% endhighlight %}
 
-![EF Implicit Conversion Fixed](/assets/2023-12-27-implicit-conversions/07-netcore-implicitconversion-fixed.png)
+![EF Implicit Conversion Fixed]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/07-netcore-implicitconversion-fixed.png)
 
 ## Finding Implicit conversions using an Extended Event Session
 
@@ -360,6 +360,6 @@ ALTER EVENT SESSION [implicit_conversions] ON SERVER STATE = START;
 
 {% endhighlight %}
 
-![Extended Event Output](/assets/2023-12-27-implicit-conversions/08-extended-event.png)
+![Extended Event Output]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/08-extended-event.png)
 
 We can then utilize [XESmartTarget](https://github.com/spaghettidba/XESmartTarget/wiki) by SpaghettiDBA to output that data to a table or another medium for tracking and reporting.
