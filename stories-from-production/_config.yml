@@ -23,7 +23,7 @@ email: luke.oscar.mckee@gmail.com
 description: >- # this means to ignore newlines until "baseurl:"
   This blog is intended to act as a personal resource to recall incidents and solutions I've encountered in production.
   It also acts as an educational resource for others 
-baseurl: "/stories-from-production" # the subpath of your site, e.g. /blog
+baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: jekyllrb
 github_username:  jekyll
