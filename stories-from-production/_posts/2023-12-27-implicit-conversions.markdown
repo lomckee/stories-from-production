@@ -5,7 +5,25 @@ date:   2023-12-27 18:51:40 +0000
 categories: sql server
 ---
 
+- [Implicit Conversions in Microsoft SQL Server](#implicit-conversions-in-microsoft-sql-server)
+- [Implicit Conversion Introduced in Where Clause](#implicit-conversion-introduced-in-where-clause)
+	- [Problem](#problem)
+	- [Generate Some Data](#generate-some-data)
+	- [Test](#test)
+	- [Solution](#solution)
+- [Implicit Conversion Caused by Joining on Two Different Datatypes](#implicit-conversion-caused-by-joining-on-two-different-datatypes)
+	- [Problem](#problem-1)
+	- [Data Generation](#data-generation)
+	- [Test](#test-1)
+	- [Solution](#solution-1)
+- [Implicit Conversion Caused by a Misconfiguration in Entity Framework](#implicit-conversion-caused-by-a-misconfiguration-in-entity-framework)
+	- [Data Generation](#data-generation-1)
+	- [.Net Project](#net-project)
+	- [Solution](#solution-2)
+- [Finding Implicit conversions using an Extended Event Session](#finding-implicit-conversions-using-an-extended-event-session)
+
 ## Implicit Conversions in Microsoft SQL Server
+<a name="introduction"></a>
 
 A very common issue is an implicit conversion. They occur when SQL Server is told to compare two values of differing datatypes.
 They often cause SQL Server to perform an index scan instead of an index seek. This can cause unintentional performance impact.
@@ -15,7 +33,14 @@ We will start by looking at an implicit conversion introduced in a where clause;
 
 All demos will be done using code that will generate all the tables and data sufficient for a demo. All code used will be provided as part of the blog post.
 
-## Generate Some Data
+## Implicit Conversion Introduced in Where Clause
+<a name="implicit-conversion-filter"></a>
+
+### Problem
+
+In this situation the value that is being filtered by is a type mismatch to the datatype in the table.
+
+### Generate Some Data
 
 {% highlight sql %}
 CREATE TABLE Lefty
@@ -55,11 +80,8 @@ ON dbo.Lefty ( ExternalId );
 
 {% endhighlight %}
 
-## Implicit Conversion Introduced in Where Clause
+### Test
 
-### Problem
-
-In this situation the value that is being filtered by is a type mismatch to the datatype in the table.
 In the code snippet below, a lookup is performed for the ExternalId value `156` as an integer. Examining the plan generated, a warning is produced about an implicit conversion and an index scan is performed on IX_Righty_ExternalId.
 
 If `SET STATISTICS IO ON;` is also set, it's observable that a large number of logical reads is performed, in this case just over 18,000.
@@ -91,6 +113,7 @@ WHERE r.ExternalId = '156'
 ![Where Clause implicit conversion]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/02-where-clause-solution.png)
 
 ## Implicit Conversion Caused by Joining on Two Different Datatypes
+<a name="implicit-conversion-joins"></a>
 
 ### Problem
 
@@ -99,6 +122,8 @@ Table A has a field that is a foreign key of Table B; however, the datatypes of 
 For this problem we will change the table structure a little bit to better represent what I've seen in the real world.
 
 You may note that the following tables are missing explicit foreign key constraints. This is intentional for this demo as in the real world I have encountered numerous times foreign keys without the constraint explicitly declared. We will see how this also impacts performance. Additionally, you can't have a foreign key between two fields with mismatched data types.
+
+### Data Generation
 
 {% highlight sql %}
 CREATE TABLE ExternalSourceData
@@ -144,6 +169,8 @@ JOIN dbo.InternalData id
 ON esd.Id = id.ExternalIdNumber
 
 {% endhighlight %}
+
+### Test
 
 With an index on `ExternalId` and `ExternalIdNumber` typically we would expect an index seek on `IX_InternalData_ExternalId` and `IX_InternalData_ExternalIdNumber` when joining onto those columns; due to the datatype mismatch between `ExternalSourceData.Id` and `InternalData.ExternalIdNumber` an implicit conversion occurs and a scan is performed instead of a seek.
 
@@ -198,6 +225,7 @@ With the foreign key in place, re-executing our original query SQL Server no lon
 ![Foreign Key Query]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/05-foreign-key.png)
 
 ## Implicit Conversion Caused by a Misconfiguration in Entity Framework
+<a name="implicit-conversion-efconfiguration"></a>
 
 I suggest using EF Core tooling to generate your model, or database depending which you created first, this will automatically take care of the type definitions for you.
 [Scaffolding](https://learn.microsoft.com/en-us/ef/core/managing-schemas/scaffolding/).
@@ -344,6 +372,7 @@ WHERE [g].[SomeNVarchar] = N'Hello World'
 ![EF Implicit Conversion Fixed]({{ site.baseurl }}/assets/2023-12-27-implicit-conversions/07-netcore-implicitconversion-fixed.png)
 
 ## Finding Implicit conversions using an Extended Event Session
+<a name="implicit-conversion-extendedevent"></a>
 
 To be proactive about finding implicit conversions, you can set up an extended event session to capture them.
 
