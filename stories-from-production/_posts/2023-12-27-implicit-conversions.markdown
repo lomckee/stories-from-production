@@ -8,16 +8,16 @@ categories: sql server
 - [Implicit Conversions in Microsoft SQL Server](#implicit-conversions-in-microsoft-sql-server)
 - [Implicit Conversion Introduced in Where Clause](#implicit-conversion-introduced-in-where-clause)
 	- [Problem](#problem)
-	- [Generate Some Data](#generate-some-data)
+	- [Data Generation](#data-generation)
 	- [Test](#test)
 	- [Solution](#solution)
 - [Implicit Conversion Caused by Joining on Two Different Datatypes](#implicit-conversion-caused-by-joining-on-two-different-datatypes)
 	- [Problem](#problem-1)
-	- [Data Generation](#data-generation)
+	- [Data Generation](#data-generation-1)
 	- [Test](#test-1)
 	- [Solution](#solution-1)
 - [Implicit Conversion Caused by a Misconfiguration in Entity Framework](#implicit-conversion-caused-by-a-misconfiguration-in-entity-framework)
-	- [Data Generation](#data-generation-1)
+	- [Data Generation](#data-generation-2)
 	- [.Net Project](#net-project)
 	- [Solution](#solution-2)
 - [Finding Implicit conversions using an Extended Event Session](#finding-implicit-conversions-using-an-extended-event-session)
@@ -40,7 +40,7 @@ All demos will be done using code that will generate all the tables and data suf
 
 In this situation the value that is being filtered by is a type mismatch to the datatype in the table.
 
-### Generate Some Data
+### Data Generation
 
 {% highlight sql %}
 CREATE TABLE Lefty
